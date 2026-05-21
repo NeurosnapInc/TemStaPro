@@ -21,3 +21,15 @@ dependencies = [
 test = [
   "pytest",
 ]
+
+[tool.setuptools]
+py-modules = [
+  "MLP",
+  "data_process",
+  "model_flow",
+  "prottrans_models",
+  "results",
+]
+script-files = [
+  "temstapro",
+]
