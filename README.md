@@ -18,69 +18,29 @@ Other hardware systems, which were used to successfully run the program:
 
 ## Environment requirements
 
-Before starting up Anaconda or Miniconda should be installed
-in the system. Follow instructions given in 
-[Conda's documentation.](https://docs.conda.io/projects/conda/en/latest/user-guide/install/linux.html)
+Create a Python environment first, then install TemStaPro from the local
+checkout with `pip`.
 
-Setting up the environment can be done in one of the following ways.
-
-### From YML file
-
-In this repository two YML files can be found: one YML file
-has the prerequisites for the environment that exploits only 
-CPU ([`environment_CPU.yml`](./environment_CPU.yml)), another one to exploit both CPU 
-GPU ([`environment_GPU.yml`](./environment_GPU.yml)).
-
-This approach was tested with Conda 4.10.3 and 4.12.0 versions.
-
-Run the following command to create the environment from a 
-YML file:
+For a GPU-enabled environment:
 ```
-conda env create -f environment_CPU.yml
+python -m venv temstapro_env
+source temstapro_env/bin/activate
+pip install "torch==2.6.0"
+pip install .
 ```
 
-Activate the environment:
+For a CPU-only environment, install the CPU build of PyTorch first and then
+install TemStaPro:
 ```
-conda activate temstapro_env_CPU
-```
-
-### From scratch
-
-To set up the environment to exploit GPU for the program, run the following commands:
-```
-conda create -n temstapro_env python=3.7
-conda activate temstapro_env
-conda install pytorch torchvision torchaudio pytorch-cuda=11.7 -c pytorch -c nvidia
-conda install -c conda-forge transformers
-conda install -c conda-forge sentencepiece
-conda install -c conda-forge matplotlib
+python -m venv temstapro_env
+source temstapro_env/bin/activate
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+pip install .
 ```
 
-To test if PyTorch package is installed to exploit CUDA,
-call `python3` command interpreter and run the 
-following lines:
+To verify that PyTorch can see CUDA when expected:
 ```
-import torch
-torch.cuda.is_available()
-```
-
-If the output is 'True', then the installing procedure was successful,
-otherwise try to set the path to the installed packages:
-```
-export PATH=/usr/local/cuda-11.7/bin${PATH:+:${PATH}}
-export LD_LIBRARY_PATH=/usr/local/cuda-11.7/lib64\${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
-```
-
-If CUDA for PyTorch is still not available, check out the [forum.](https://github.com/pytorch/pytorch/issues/30664)
-
-For the systems without GPU, run the following commands:
-```
-conda create -n temstapro_env python=3.7
-conda activate temstapro_env
-conda install -c conda-forge transformers
-conda install pytorch -c pytorch
-conda install -c conda-forge sentencepiece
-conda install -c conda-forge matplotlib
+python -c "import torch; print(torch.cuda.is_available())"
 ```
 
 ## Downloading the program
