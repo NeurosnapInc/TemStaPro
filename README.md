@@ -92,6 +92,10 @@ To get a list of all possible options run:
 ProtTrans weights are downloaded on demand into `./ProtTrans/` the first time
 they are needed.
 
+If you prefer not to run TemStaPro locally, Neurosnap provides a hosted
+webserver for running TemStaPro interactively and in bulk:
+https://neurosnap.ai/service/TemStaPro%20Protein%20Thermostability%20Prediction
+
 The main workflow of the program is to take FASTA files of protein
 sequences and provide predictions for them from mean ProtTrans embeddings. 
 
