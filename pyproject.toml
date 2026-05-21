@@ -16,3 +16,8 @@ dependencies = [
   "torch",
   "transformers",
 ]
+
+[project.optional-dependencies]
+test = [
+  "pytest",
+]
