@@ -18,13 +18,18 @@ Other hardware systems, which were used to successfully run the program:
 
 ## Environment requirements
 
+TemStaPro now ships with a `pyproject.toml` and supports modern Python
+versions. Python 3.12 is the recommended version for new environments.
+Any supported version matching the package metadata (`>=3.9`) should work.
+
 Create a Python environment first, then install TemStaPro from the local
 checkout with `pip`.
 
 For a GPU-enabled environment:
 ```
-python -m venv temstapro_env
+python3.12 -m venv temstapro_env
 source temstapro_env/bin/activate
+python -m pip install --upgrade pip
 pip install "torch==2.6.0"
 pip install .
 ```
@@ -32,8 +37,9 @@ pip install .
 For a CPU-only environment, install the CPU build of PyTorch first and then
 install TemStaPro:
 ```
-python -m venv temstapro_env
+python3.12 -m venv temstapro_env
 source temstapro_env/bin/activate
+python -m pip install --upgrade pip
 pip install torch --index-url https://download.pytorch.org/whl/cpu
 pip install .
 ```
@@ -49,7 +55,8 @@ To download the program, go to the directory of your choice in your system.
 If you have `git` installed, run the following command:
 
 ```
-git clone https://github.com/ievapudz/TemStaPro.git
+git clone https://github.com/NeurosnapInc/TemStaPro.git
+cd TemStaPro
 ```
 
 If there is no `git` in your system, press on the (green) button 'Code'
@@ -62,17 +69,17 @@ your choice.
 Test if the environment was installed and the program was downloaded 
 successfully:
 ```
-make all
+pip install -e ".[test]"
+pytest -q
 ```
 
-It might be that the tests will not pass on the first
-try because of "Downloading" messages. If this is 
-the case, clean the output files
-and run the tests again using commands:
+The CLI golden tests may download ProtTrans assets on first use. If that
+causes a mismatch in expected output, rerun the tests after the initial
+download completes.
 
+To run a single CLI golden test case:
 ```
-make clean
-make all
+pytest -q tests/test_cli.py -k 004
 ```
 
 ## Usage
@@ -81,6 +88,9 @@ To get a list of all possible options run:
 ```
 ./temstapro --help
 ```
+
+ProtTrans weights are downloaded on demand into `./ProtTrans/` the first time
+they are needed.
 
 The main workflow of the program is to take FASTA files of protein
 sequences and provide predictions for them from mean ProtTrans embeddings. 
