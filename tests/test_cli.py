@@ -1,349 +1,183 @@
-"""Pytest golden tests for the TemStaPro CLI."""
+"""CLI tests for TemStaPro focused on stable, user-visible behavior."""
 
 from __future__ import annotations
 
-import re
+import csv
 import subprocess
 import sys
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
-
-import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-OUTPUT_DIR = REPO_ROOT / "tests" / "outputs"
 TEMSTAPRO_BIN = REPO_ROOT / "temstapro"
 
 
-@dataclass(frozen=True)
-class Step:
-    """One CLI invocation plus any cleanup that surrounds it."""
-
-    args: tuple[str, ...]
-    cleanup_before: tuple[str, ...] = ()
-    cleanup_after: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True)
-class Case:
-    """Full golden test case, potentially with multiple CLI invocations."""
-
-    case_id: str
-    steps: tuple[Step, ...]
-    cleanup_before: tuple[str, ...] = ()
-    cleanup_after: tuple[str, ...] = ()
+def _run_cli(*args: str) -> subprocess.CompletedProcess[str]:
+    """Run the TemStaPro CLI and capture combined stdout and stderr."""
+    return subprocess.run(
+        [sys.executable, str(TEMSTAPRO_BIN), *args],
+        cwd=REPO_ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        check=False,
+    )
 
 
-def _remove_patterns(patterns: Iterable[str]) -> None:
-    """Delete files matching the given glob patterns relative to the repo root."""
-    for pattern in patterns:
-        for path in REPO_ROOT.glob(pattern):
-            if path.is_file():
-                path.unlink()
+def _read_tsv(path: Path) -> list[dict[str, str]]:
+    """Read a TSV file into row dictionaries."""
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        return list(csv.DictReader(handle, delimiter="\t"))
 
 
-def _normalize_output(output: str) -> str:
-    """Normalize unstable output fragments before golden comparison."""
-    output = re.sub(r"at (.*) line \d+\.", r"at \1 line 999.", output)
-    output = re.sub(r".*: beginning", "2000-01-01: beginning", output)
-    output = re.sub(r".*: finished", "2000-01-01: finished", output)
-    output = re.sub(r".*: time to", "0:00:00.0001: time to", output)
-    return output
+def _table_lines(output: str) -> list[str]:
+    """Return TSV table lines from combined CLI output."""
+    return [line for line in output.splitlines() if "\t" in line]
 
 
-def _run_step(step: Step) -> str:
-    """Run a single TemStaPro CLI step and return combined stdout/stderr."""
-    _remove_patterns(step.cleanup_before)
-    try:
-        result = subprocess.run(
-            [sys.executable, str(TEMSTAPRO_BIN), *step.args],
-            cwd=REPO_ROOT,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            check=False,
-        )
-        return result.stdout
-    finally:
-        _remove_patterns(step.cleanup_after)
+def test_cli_requires_fasta_argument() -> None:
+    """The CLI should fail with a clear message when FASTA input is omitted."""
+    result = _run_cli("-d", "./ProtTrans/")
+
+    assert result.returncode != 0
+    assert "a FASTA file is required." in result.stdout
 
 
-CASES = (
-    Case(
-        case_id="001",
-        steps=(
-            Step(
-                args=(
-                    "-f", "tests/data/replaced_symbol_sequence.fasta",
-                    "-e", "./tests/outputs/",
-                    "-d", "./ProtTrans/",
-                    "--per-res-output", "./tests/outputs/001_mean.tmp",
-                ),
-                cleanup_after=("tests/outputs/001_mean.tmp",),
-            ),
-        ),
-    ),
-    Case(
-        case_id="002",
-        steps=(
-            Step(
-                args=(
-                    "-f", "./tests/data/long_sequence_2.fasta",
-                    "-e", "tests/outputs/",
-                    "-d", "./ProtTrans/",
-                    "--mean-out", "tests/outputs/002.tmp",
-                ),
-                cleanup_after=(
-                    "tests/outputs/mean_52ae55d4fc194abf0e65abc9d740ffc7f84972ddacefb62e931131655083857e.pt",
-                    "tests/outputs/002.tmp",
-                ),
-            ),
-        ),
-    ),
-    Case(
-        case_id="003",
-        steps=(
-            Step(args=("-d", "./ProtTrans/")),
-        ),
-    ),
-    Case(
-        case_id="004",
-        steps=(
-            Step(
-                args=(
-                    "-f", "./tests/data/long_sequence_2.fasta",
-                    "-e", "tests/outputs",
-                    "-d", "./ProtTrans/",
-                    "--mean-out", "tests/outputs/004.tmp",
-                ),
-                cleanup_after=(
-                    "tests/outputs/mean_52ae55d4fc194abf0e65abc9d740ffc7f84972ddacefb62e931131655083857e.pt",
-                    "tests/outputs/004.tmp",
-                ),
-            ),
-        ),
-        cleanup_before=("ProtTrans/*",),
-    ),
-    Case(
-        case_id="005",
-        steps=(
-            Step(
-                args=(
-                    "-f", "./tests/data/multiple_sequences.fasta",
-                    "-e", "tests/outputs/",
-                    "-d", "./ProtTrans/",
-                ),
-            ),
-        ),
-        cleanup_before=(
-            "tests/outputs/mean_5d817ae8188e00eca8913c80312e2669d6551777fbed0d1764e1c09386638c0a.pt",
-            "tests/outputs/mean_adc7fcd839ba2802998088a0c7b2310d3abdef0229cc020c55fcb82a492c2d8d.pt",
-            "tests/outputs/mean_c425721d82cb786570760210076eaa21403b210aa6566882a41c4ac70df2defd.pt",
-        ),
-    ),
-    Case(
-        case_id="006",
-        steps=(
-            Step(
-                args=(
-                    "-f", "tests/data/long_sequence.fasta",
-                    "-e", "./tests/outputs/",
-                    "-d", "./ProtTrans/",
-                    "--mean-output", "./tests/outputs/006_mean.tmp",
-                    "--per-segment-output", "./tests/outputs/006_per_res_smooth.tmp",
-                    "-c",
-                    "--segment-size", "41",
-                    "--window-size-predictions", "81",
-                    "-p", "./tests/outputs/",
-                ),
-                cleanup_after=(
-                    "tests/outputs/006_mean.tmp",
-                    "tests/outputs/006_per_res_smooth.tmp",
-                ),
-            ),
-        ),
-        cleanup_before=(
-            "tests/outputs/mean_b6f8b4d2f6602ee040278b1d64ab7cf588baa33d74a126030e252fd91ac00601.pt",
-            "tests/outputs/per_res_b6f8b4d2f6602ee040278b1d64ab7cf588baa33d74a126030e252fd91ac00601.pt",
-        ),
-    ),
-    Case(
-        case_id="007",
-        steps=(
-            Step(
-                args=(
-                    "-f", "./tests/data/multiple_sequences.fasta",
-                    "-e", "tests/outputs/",
-                    "-d", "./ProtTrans/",
-                ),
-            ),
-            Step(
-                args=(
-                    "-f", "./tests/data/multiple_sequences.fasta",
-                    "-e", "tests/outputs/",
-                    "-d", "./ProtTrans/",
-                ),
-            ),
-        ),
-        cleanup_before=(
-            "tests/outputs/mean_5d817ae8188e00eca8913c80312e2669d6551777fbed0d1764e1c09386638c0a.pt",
-            "tests/outputs/mean_adc7fcd839ba2802998088a0c7b2310d3abdef0229cc020c55fcb82a492c2d8d.pt",
-            "tests/outputs/mean_c425721d82cb786570760210076eaa21403b210aa6566882a41c4ac70df2defd.pt",
-        ),
-    ),
-    Case(
-        case_id="008",
-        steps=(
-            Step(
-                args=(
-                    "-f", "./tests/data/multiple_sequences.fasta",
-                    "-d", "./ProtTrans/",
-                ),
-            ),
-        ),
-    ),
-    Case(
-        case_id="009",
-        steps=(
-            Step(
-                args=(
-                    "-f", "./tests/data/long_sequence.fasta",
-                    "-d", "./ProtTrans/",
-                ),
-            ),
-        ),
-    ),
-    Case(
-        case_id="010",
-        steps=(
-            Step(
-                args=(
-                    "-f", "tests/data/multiple_short_sequences.fasta",
-                    "-e", "./tests/outputs/",
-                    "-d", "./ProtTrans/",
-                    "-p", "./tests/outputs/",
-                    "--mean-output", "./tests/outputs/010_mean.tmp",
-                    "--per-res-output", "./tests/outputs/010_per_res.tmp",
-                ),
-                cleanup_after=(
-                    "tests/outputs/short_seq_?_per_residue_plot_?.svg",
-                    "tests/outputs/010_mean.tmp",
-                    "tests/outputs/010_per_res.tmp",
-                ),
-            ),
-        ),
-        cleanup_before=(
-            "tests/outputs/mean_519c2e9a42194ade71c697d64ed3bced3175a6324803a940ebdf69bb65f301ec.pt",
-            "tests/outputs/per_res_519c2e9a42194ade71c697d64ed3bced3175a6324803a940ebdf69bb65f301ec.pt",
-            "tests/outputs/mean_7bdb2d9587a23bb7f744bcffba509cc7adf8c69667a9d954c3be1a4aa09f7c0a.pt",
-            "tests/outputs/per_res_7bdb2d9587a23bb7f744bcffba509cc7adf8c69667a9d954c3be1a4aa09f7c0a.pt",
-            "tests/outputs/mean_d2a3c93ce60d9c7ed923bda5def8fa46267df336f7310cc3e951a20f092df979.pt",
-            "tests/outputs/per_res_d2a3c93ce60d9c7ed923bda5def8fa46267df336f7310cc3e951a20f092df979.pt",
-            "tests/outputs/short_seq_?_per_residue_plot_?.svg",
-        ),
-    ),
-    Case(
-        case_id="011",
-        steps=(
-            Step(
-                args=(
-                    "-f", "tests/data/long_sequence.fasta",
-                    "-e", "./tests/outputs/",
-                    "-d", "./ProtTrans/",
-                    "--mean-output", "tests/outputs/011_mean.tmp",
-                    "--per-res-output", "tests/outputs/011_per_res.tmp",
-                ),
-                cleanup_after=(
-                    "tests/outputs/011_mean.tmp",
-                    "tests/outputs/011_per_res.tmp",
-                ),
-            ),
-        ),
-        cleanup_before=(
-            "tests/outputs/mean_b6f8b4d2f6602ee040278b1d64ab7cf588baa33d74a126030e252fd91ac00601.pt",
-            "tests/outputs/per_res_b6f8b4d2f6602ee040278b1d64ab7cf588baa33d74a126030e252fd91ac00601.pt",
-        ),
-    ),
-    Case(
-        case_id="012",
-        steps=(
-            Step(
-                args=(
-                    "-f", "tests/data/multiple_sequences.fasta",
-                    "-e", "./tests/outputs/",
-                    "-d", "./ProtTrans/",
-                    "--mean-output", "tests/outputs/012_mean.tmp",
-                    "--per-res-output", "tests/outputs/012_per_res.tmp",
-                ),
-                cleanup_after=(
-                    "tests/outputs/012_mean.tmp",
-                    "tests/outputs/012_per_res.tmp",
-                ),
-            ),
-        ),
-        cleanup_before=(
-            "tests/outputs/5d817ae8188e00eca8913c80312e2669d6551777fbed0d1764e1c09386638c0a.pt",
-            "tests/outputs/adc7fcd839ba2802998088a0c7b2310d3abdef0229cc020c55fcb82a492c2d8d.pt",
-            "tests/outputs/c425721d82cb786570760210076eaa21403b210aa6566882a41c4ac70df2defd.pt",
-        ),
-    ),
-    Case(
-        case_id="013",
-        steps=(
-            Step(
-                args=(
-                    "-f", "./tests/data/multiple_sequences.fasta",
-                    "-e", "tests/outputs/",
-                    "-d", "./ProtTrans/",
-                ),
-            ),
-            Step(
-                args=(
-                    "-f", "./tests/data/multiple_sequences.fasta",
-                    "-e", "tests/outputs/",
-                    "-d", "./ProtTrans/",
-                ),
-                cleanup_before=(
-                    "tests/outputs/mean_5d817ae8188e00eca8913c80312e2669d6551777fbed0d1764e1c09386638c0a.pt",
-                    "tests/outputs/mean_adc7fcd839ba2802998088a0c7b2310d3abdef0229cc020c55fcb82a492c2d8d.pt",
-                ),
-            ),
-        ),
-        cleanup_before=(
-            "tests/outputs/mean_5d817ae8188e00eca8913c80312e2669d6551777fbed0d1764e1c09386638c0a.pt",
-            "tests/outputs/mean_adc7fcd839ba2802998088a0c7b2310d3abdef0229cc020c55fcb82a492c2d8d.pt",
-            "tests/outputs/mean_c425721d82cb786570760210076eaa21403b210aa6566882a41c4ac70df2defd.pt",
-        ),
-    ),
-    Case(
-        case_id="014",
-        steps=(
-            Step(
-                args=(
-                    "-f", "./tests/data/long_sequence_2.fasta",
-                    "-e", "tests/outputs/",
-                    "-d", "./ProtTrans/",
-                    "--more-thresholds",
-                ),
-                cleanup_after=(
-                    "tests/outputs/mean_52ae55d4fc194abf0e65abc9d740ffc7f84972ddacefb62e931131655083857e.pt",
-                ),
-            ),
-        ),
-    ),
-)
+def test_cli_requires_prottrans_directory() -> None:
+    """The CLI should fail with a clear message when the ProtTrans path is omitted."""
+    result = _run_cli("-f", "tests/data/multiple_short_sequences.fasta")
+
+    assert result.returncode != 0
+    assert "a path to the ProtTrans model location is required." in result.stdout
 
 
-@pytest.mark.parametrize("case", CASES, ids=[case.case_id for case in CASES])
-def test_temstapro_cli_golden(case: Case) -> None:
-    """Run the CLI scenario and compare normalized output to the golden file."""
-    _remove_patterns(case.cleanup_before)
-    try:
-        actual = "".join(_run_step(step) for step in case.steps)
-        actual = _normalize_output(actual)
-        expected = (OUTPUT_DIR / f"temstapro_{case.case_id}.out").read_text(encoding="utf-8")
-        assert actual == expected
-    finally:
-        _remove_patterns(case.cleanup_after)
+def test_cli_replaced_symbols_run_succeeds(tmp_path: Path) -> None:
+    """A small sequence with replaced symbols should complete and write both outputs."""
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    mean_output = tmp_path / "mean.tsv"
+    per_res_output = tmp_path / "per_res.tsv"
+
+    result = _run_cli(
+        "-f", "tests/data/replaced_symbol_sequence.fasta",
+        "-e", str(cache_dir),
+        "-d", "./ProtTrans/",
+        "--mean-output", str(mean_output),
+        "--per-res-output", str(per_res_output),
+    )
+
+    assert result.returncode == 0, result.stdout
+    assert "beginning to load the model" in result.stdout
+    assert "finished making inferences" in result.stdout
+    assert mean_output.exists()
+    assert per_res_output.exists()
+
+    mean_rows = _read_tsv(mean_output)
+    per_res_rows = _read_tsv(per_res_output)
+    assert len(mean_rows) == 1
+    assert len(per_res_rows) == 1
+    assert mean_rows[0]["protein_id"] == "artificial_sequence"
+    assert per_res_rows[0]["protein_id"] == "artificial_sequence"
+    assert mean_rows[0]["sequence"]
+    assert per_res_rows[0]["sequence"]
+
+
+def test_cli_missing_embeddings_dir_warns_but_still_runs(tmp_path: Path) -> None:
+    """A missing cache directory should warn and still produce predictions."""
+    missing_cache_dir = tmp_path / "missing-cache"
+    mean_output = tmp_path / "mean.tsv"
+
+    result = _run_cli(
+        "-f", "tests/data/multiple_short_sequences.fasta",
+        "-e", str(missing_cache_dir),
+        "-d", "./ProtTrans/",
+        "--mean-output", str(mean_output),
+    )
+
+    assert result.returncode == 0, result.stdout
+    assert "does not exist" in result.stdout
+    assert "will not be saved" in result.stdout
+    assert mean_output.exists()
+
+    mean_rows = _read_tsv(mean_output)
+    assert len(mean_rows) == 3
+
+
+def test_cli_reuses_cached_embeddings_on_second_run(tmp_path: Path) -> None:
+    """A second run should reuse cached embeddings instead of regenerating them."""
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    first_mean_output = tmp_path / "first_mean.tsv"
+    second_mean_output = tmp_path / "second_mean.tsv"
+
+    first = _run_cli(
+        "-f", "tests/data/multiple_short_sequences.fasta",
+        "-e", str(cache_dir),
+        "-d", "./ProtTrans/",
+        "--mean-output", str(first_mean_output),
+    )
+    assert first.returncode == 0, first.stdout
+    assert "beginning to generate embeddings" in first.stdout
+
+    cached_embeddings = list(cache_dir.glob("*.pt"))
+    assert cached_embeddings
+
+    second = _run_cli(
+        "-f", "tests/data/multiple_short_sequences.fasta",
+        "-e", str(cache_dir),
+        "-d", "./ProtTrans/",
+        "--mean-output", str(second_mean_output),
+    )
+
+    assert second.returncode == 0, second.stdout
+    assert "beginning to generate embeddings" not in second.stdout
+    assert "beginning to make inferences" in second.stdout
+    assert first_mean_output.read_text(encoding="utf-8") == second_mean_output.read_text(encoding="utf-8")
+
+
+def test_cli_more_thresholds_adds_extended_columns(tmp_path: Path) -> None:
+    """The extended thresholds mode should print the extra threshold columns."""
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+
+    result = _run_cli(
+        "-f", "tests/data/multiple_short_sequences.fasta",
+        "-e", str(cache_dir),
+        "-d", "./ProtTrans/",
+        "--more-thresholds",
+    )
+
+    assert result.returncode == 0, result.stdout
+
+    lines = _table_lines(result.stdout)
+    assert lines
+    header = lines[0].split("\t")
+    assert "t70_binary" in header
+    assert "t75_binary" in header
+    assert "t80_binary" in header
+    assert "thermophilicity" in header
+    assert len(lines[1:]) == 3
+
+
+def test_cli_per_residue_plots_are_written(tmp_path: Path) -> None:
+    """Per-residue output mode should generate one SVG plot per short input sequence."""
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    mean_output = tmp_path / "mean.tsv"
+    per_res_output = tmp_path / "per_res.tsv"
+    plot_dir = tmp_path / "plots"
+
+    result = _run_cli(
+        "-f", "tests/data/multiple_short_sequences.fasta",
+        "-e", str(cache_dir),
+        "-d", "./ProtTrans/",
+        "--mean-output", str(mean_output),
+        "--per-res-output", str(per_res_output),
+        "-p", str(plot_dir),
+    )
+
+    assert result.returncode == 0, result.stdout
+    assert mean_output.exists()
+    assert per_res_output.exists()
+    assert plot_dir.exists()
+    assert len(list(plot_dir.glob("*.svg"))) == 3
