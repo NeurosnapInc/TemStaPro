@@ -36,18 +36,18 @@ def _table_lines(output: str) -> list[str]:
 
 
 def test_cli_requires_fasta_argument() -> None:
-    """The CLI should fail with a clear message when FASTA input is omitted."""
+    """The CLI should print a clear message when FASTA input is omitted."""
     result = _run_cli("-d", "./ProtTrans/")
 
-    assert result.returncode != 0
+    assert result.returncode == 0
     assert "a FASTA file is required." in result.stdout
 
 
 def test_cli_requires_prottrans_directory() -> None:
-    """The CLI should fail with a clear message when the ProtTrans path is omitted."""
+    """The CLI should print a clear message when the ProtTrans path is omitted."""
     result = _run_cli("-f", "tests/data/multiple_short_sequences.fasta")
 
-    assert result.returncode != 0
+    assert result.returncode == 0
     assert "a path to the ProtTrans model location is required." in result.stdout
 
 
@@ -75,9 +75,12 @@ def test_cli_replaced_symbols_run_succeeds(tmp_path: Path) -> None:
     mean_rows = _read_tsv(mean_output)
     per_res_rows = _read_tsv(per_res_output)
     assert len(mean_rows) == 1
-    assert len(per_res_rows) == 1
+    assert len(per_res_rows) == 158
     assert mean_rows[0]["protein_id"] == "artificial_sequence"
     assert per_res_rows[0]["protein_id"] == "artificial_sequence"
+    assert per_res_rows[-1]["protein_id"] == "artificial_sequence"
+    assert per_res_rows[0]["position"] == "1"
+    assert per_res_rows[-1]["position"] == "158"
     assert mean_rows[0]["sequence"]
     assert per_res_rows[0]["sequence"]
 
@@ -160,7 +163,7 @@ def test_cli_more_thresholds_adds_extended_columns(tmp_path: Path) -> None:
 
 
 def test_cli_per_residue_plots_are_written(tmp_path: Path) -> None:
-    """Per-residue output mode should generate one SVG plot per short input sequence."""
+    """Per-residue output mode should generate threshold plots for each short input sequence."""
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
     mean_output = tmp_path / "mean.tsv"
@@ -180,4 +183,8 @@ def test_cli_per_residue_plots_are_written(tmp_path: Path) -> None:
     assert mean_output.exists()
     assert per_res_output.exists()
     assert plot_dir.exists()
-    assert len(list(plot_dir.glob("*.svg"))) == 3
+    plots = list(plot_dir.glob("*.svg"))
+    assert len(plots) == 18
+    assert any(path.name == "short_seq_1_per_residue_plot_t40.svg" for path in plots)
+    assert any(path.name == "short_seq_2_per_residue_plot_t55.svg" for path in plots)
+    assert any(path.name == "short_seq_3_per_residue_plot_t65.svg" for path in plots)
